@@ -6,6 +6,7 @@ import com.devoops.user.dto.response.AuthenticationResponse;
 import com.devoops.user.dto.response.UserResponse;
 import com.devoops.user.entity.User;
 import com.devoops.user.exception.InvalidCredentialsException;
+import com.devoops.user.exception.InvalidPasswordException;
 import com.devoops.user.exception.UserAlreadyExistsException;
 import com.devoops.user.exception.UserNotFoundException;
 import com.devoops.user.mapper.UserMapper;
@@ -63,7 +64,7 @@ public class UserService {
             throw new UserNotFoundException("User does not exist");
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            throw new InvalidCredentialsException("Current password is incorrect");
+            throw new InvalidPasswordException("Current password is incorrect");
         }
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));

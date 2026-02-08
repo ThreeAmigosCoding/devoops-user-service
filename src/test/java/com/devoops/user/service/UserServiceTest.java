@@ -6,7 +6,7 @@ import com.devoops.user.dto.response.AuthenticationResponse;
 import com.devoops.user.dto.response.UserResponse;
 import com.devoops.user.entity.Role;
 import com.devoops.user.entity.User;
-import com.devoops.user.exception.InvalidCredentialsException;
+import com.devoops.user.exception.InvalidPasswordException;
 import com.devoops.user.exception.UserAlreadyExistsException;
 import com.devoops.user.exception.UserNotFoundException;
 import com.devoops.user.mapper.UserMapper;
@@ -264,8 +264,8 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw InvalidCredentialsException when current password is wrong")
-        void changePassword_WithIncorrectCurrentPassword_ThrowsInvalidCredentialsException() {
+        @DisplayName("Should throw InvalidPasswordException when current password is wrong")
+        void changePassword_WithIncorrectCurrentPassword_ThrowsInvalidPasswordException() {
             // Given
             Authentication auth = mock(Authentication.class);
             when(auth.getPrincipal()).thenReturn(testUser);
@@ -274,7 +274,7 @@ class UserServiceTest {
 
             // When/Then
             assertThatThrownBy(() -> userService.changePassword(auth, request))
-                    .isInstanceOf(InvalidCredentialsException.class)
+                    .isInstanceOf(InvalidPasswordException.class)
                     .hasMessageContaining("Current password is incorrect");
 
             verify(userRepository, never()).save(any());
