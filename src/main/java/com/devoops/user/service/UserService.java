@@ -5,7 +5,6 @@ import com.devoops.user.dto.request.UpdateUserRequest;
 import com.devoops.user.dto.response.AuthenticationResponse;
 import com.devoops.user.dto.response.UserResponse;
 import com.devoops.user.entity.User;
-import com.devoops.user.exception.InvalidCredentialsException;
 import com.devoops.user.exception.InvalidPasswordException;
 import com.devoops.user.exception.UserAlreadyExistsException;
 import com.devoops.user.exception.UserNotFoundException;
@@ -13,9 +12,10 @@ import com.devoops.user.mapper.UserMapper;
 import com.devoops.user.repository.UserRepository;
 import com.devoops.user.security.JwtService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -26,15 +26,15 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
-    public UserResponse getProfile(Authentication auth) {
-        User user = (User) auth.getPrincipal();
+    public UserResponse getProfile(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User does not exist"));
         return userMapper.toUserResponse(user);
     }
 
-    public AuthenticationResponse updateProfile(Authentication auth, UpdateUserRequest request) {
-        User user = (User) auth.getPrincipal();
-        if (user == null)
-            throw new UserNotFoundException("User does not exist");
+    public AuthenticationResponse updateProfile(UUID userId, UpdateUserRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User does not exist"));
 
         if (request.username() != null && !request.username().equals(user.getUsername())) {
             if (userRepository.existsByUsername(request.username())) {
@@ -58,10 +58,9 @@ public class UserService {
         return new AuthenticationResponse(jwtService.generateToken(saved), jwtService.getExpirationTime(), userMapper.toUserResponse(saved));
     }
 
-    public void changePassword(Authentication auth, ChangePasswordRequest request) {
-        User user = (User) auth.getPrincipal();
-        if (user == null)
-            throw new UserNotFoundException("User does not exist");
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User does not exist"));
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
             throw new InvalidPasswordException("Current password is incorrect");
