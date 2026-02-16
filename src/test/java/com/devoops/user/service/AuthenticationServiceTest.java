@@ -51,6 +51,9 @@ class AuthenticationServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private UserEventPublisherService userEventPublisherService;
+
     @InjectMocks
     private AuthenticationService authenticationService;
 

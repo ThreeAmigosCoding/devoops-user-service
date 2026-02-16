@@ -37,6 +37,10 @@ dependencies {
 	// Security
 	implementation("org.springframework.boot:spring-boot-starter-security")
 
+	// RabbitMQ
+	implementation("org.springframework.boot:spring-boot-starter-amqp")
+	implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+
 	// JWT
 	implementation("io.jsonwebtoken:jjwt-api:0.12.6")
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
@@ -65,6 +69,8 @@ dependencies {
 	testImplementation("org.springframework.security:spring-security-test")
 	testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 	testImplementation("org.testcontainers:postgresql:1.20.4")
+	testImplementation("org.springframework.amqp:spring-rabbit-test")
+	testImplementation("org.testcontainers:rabbitmq:1.20.4")
 	testImplementation("io.rest-assured:rest-assured:5.5.0")
 
 	testCompileOnly("org.projectlombok:lombok")
