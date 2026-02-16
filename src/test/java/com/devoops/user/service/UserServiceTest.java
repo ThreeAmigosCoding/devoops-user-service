@@ -20,9 +20,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,14 +50,16 @@ class UserServiceTest {
     private UserService userService;
 
     private User testUser;
+    private UUID testUserId;
     private UserResponse userResponse;
 
     @BeforeEach
     void setUp() {
+        testUserId = UUID.randomUUID();
         testUser = buildTestUser();
 
         userResponse = new UserResponse(
-                UUID.randomUUID(),
+                testUserId,
                 "testuser",
                 "test@example.com",
                 "Test",
@@ -69,6 +71,7 @@ class UserServiceTest {
 
     private User buildTestUser() {
         return User.builder()
+                .id(testUserId)
                 .username("testuser")
                 .password("encoded_password")
                 .email("test@example.com")
@@ -84,21 +87,34 @@ class UserServiceTest {
     class GetProfileTests {
 
         @Test
-        @DisplayName("Should return UserResponse when auth is valid")
-        void getProfile_WithValidAuth_ReturnsUserResponse() {
+        @DisplayName("Should return UserResponse when user exists")
+        void getProfile_WithValidUserId_ReturnsUserResponse() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             when(userMapper.toUserResponse(testUser)).thenReturn(userResponse);
 
             // When
-            UserResponse result = userService.getProfile(auth);
+            UserResponse result = userService.getProfile(testUserId);
 
             // Then
             assertThat(result).isNotNull();
             assertThat(result.username()).isEqualTo("testuser");
             assertThat(result.email()).isEqualTo("test@example.com");
+            verify(userRepository).findById(testUserId);
             verify(userMapper).toUserResponse(testUser);
+        }
+
+        @Test
+        @DisplayName("Should throw UserNotFoundException when user does not exist")
+        void getProfile_WithInvalidUserId_ThrowsUserNotFoundException() {
+            // Given
+            UUID unknownId = UUID.randomUUID();
+            when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> userService.getProfile(unknownId))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessageContaining("User does not exist");
         }
     }
 
@@ -110,8 +126,7 @@ class UserServiceTest {
         @DisplayName("Should update username and return new token when username is new")
         void updateProfile_WithNewUsername_UpdatesAndReturnsToken() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest("newuser", null, null, null, null);
             when(userRepository.existsByUsername("newuser")).thenReturn(false);
             when(userRepository.save(any(User.class))).thenReturn(testUser);
@@ -120,7 +135,7 @@ class UserServiceTest {
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
 
             // When
-            AuthenticationResponse result = userService.updateProfile(auth, request);
+            AuthenticationResponse result = userService.updateProfile(testUserId, request);
 
             // Then
             assertThat(result).isNotNull();
@@ -133,13 +148,12 @@ class UserServiceTest {
         @DisplayName("Should throw UserAlreadyExistsException when username is taken")
         void updateProfile_WithExistingUsername_ThrowsUserAlreadyExistsException() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest("takenuser", null, null, null, null);
             when(userRepository.existsByUsername("takenuser")).thenReturn(true);
 
             // When/Then
-            assertThatThrownBy(() -> userService.updateProfile(auth, request))
+            assertThatThrownBy(() -> userService.updateProfile(testUserId, request))
                     .isInstanceOf(UserAlreadyExistsException.class)
                     .hasMessageContaining("Username already taken");
 
@@ -150,8 +164,7 @@ class UserServiceTest {
         @DisplayName("Should update email and return new token when email is new")
         void updateProfile_WithNewEmail_UpdatesAndReturnsToken() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest(null, "new@example.com", null, null, null);
             when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
             when(userRepository.save(any(User.class))).thenReturn(testUser);
@@ -160,7 +173,7 @@ class UserServiceTest {
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
 
             // When
-            AuthenticationResponse result = userService.updateProfile(auth, request);
+            AuthenticationResponse result = userService.updateProfile(testUserId, request);
 
             // Then
             assertThat(result).isNotNull();
@@ -172,13 +185,12 @@ class UserServiceTest {
         @DisplayName("Should throw UserAlreadyExistsException when email is taken")
         void updateProfile_WithExistingEmail_ThrowsUserAlreadyExistsException() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest(null, "taken@example.com", null, null, null);
             when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
             // When/Then
-            assertThatThrownBy(() -> userService.updateProfile(auth, request))
+            assertThatThrownBy(() -> userService.updateProfile(testUserId, request))
                     .isInstanceOf(UserAlreadyExistsException.class)
                     .hasMessageContaining("Email already taken");
 
@@ -189,8 +201,7 @@ class UserServiceTest {
         @DisplayName("Should skip username check when username is the same as current")
         void updateProfile_WithSameUsername_SkipsUsernameCheck() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest("testuser", null, null, null, null);
             when(userRepository.save(any(User.class))).thenReturn(testUser);
             when(jwtService.generateToken(any(User.class))).thenReturn("token");
@@ -198,7 +209,7 @@ class UserServiceTest {
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
 
             // When
-            userService.updateProfile(auth, request);
+            userService.updateProfile(testUserId, request);
 
             // Then
             verify(userRepository, never()).existsByUsername(anyString());
@@ -208,8 +219,7 @@ class UserServiceTest {
         @DisplayName("Should only update non-null fields")
         void updateProfile_WithNullFields_OnlyUpdatesNonNullFields() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             UpdateUserRequest request = new UpdateUserRequest(null, null, "UpdatedFirst", null, null);
             when(userRepository.save(any(User.class))).thenReturn(testUser);
             when(jwtService.generateToken(any(User.class))).thenReturn("token");
@@ -217,7 +227,7 @@ class UserServiceTest {
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
 
             // When
-            userService.updateProfile(auth, request);
+            userService.updateProfile(testUserId, request);
 
             // Then
             assertThat(testUser.getUsername()).isEqualTo("testuser");
@@ -227,15 +237,15 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw UserNotFoundException when principal is null")
-        void updateProfile_WithNullPrincipal_ThrowsUserNotFoundException() {
+        @DisplayName("Should throw UserNotFoundException when user does not exist")
+        void updateProfile_WithNonExistentUser_ThrowsUserNotFoundException() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(null);
+            UUID unknownId = UUID.randomUUID();
+            when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
             UpdateUserRequest request = new UpdateUserRequest("newuser", null, null, null, null);
 
             // When/Then
-            assertThatThrownBy(() -> userService.updateProfile(auth, request))
+            assertThatThrownBy(() -> userService.updateProfile(unknownId, request))
                     .isInstanceOf(UserNotFoundException.class)
                     .hasMessageContaining("User does not exist");
         }
@@ -249,14 +259,13 @@ class UserServiceTest {
         @DisplayName("Should encode and save new password when current password matches")
         void changePassword_WithValidPassword_EncodesAndSaves() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             ChangePasswordRequest request = new ChangePasswordRequest("current", "newpassword123");
             when(passwordEncoder.matches("current", "encoded_password")).thenReturn(true);
             when(passwordEncoder.encode("newpassword123")).thenReturn("new_encoded");
 
             // When
-            userService.changePassword(auth, request);
+            userService.changePassword(testUserId, request);
 
             // Then
             assertThat(testUser.getPassword()).isEqualTo("new_encoded");
@@ -267,13 +276,12 @@ class UserServiceTest {
         @DisplayName("Should throw InvalidPasswordException when current password is wrong")
         void changePassword_WithIncorrectCurrentPassword_ThrowsInvalidPasswordException() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(testUser);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
             ChangePasswordRequest request = new ChangePasswordRequest("wrong", "newpassword123");
             when(passwordEncoder.matches("wrong", "encoded_password")).thenReturn(false);
 
             // When/Then
-            assertThatThrownBy(() -> userService.changePassword(auth, request))
+            assertThatThrownBy(() -> userService.changePassword(testUserId, request))
                     .isInstanceOf(InvalidPasswordException.class)
                     .hasMessageContaining("Current password is incorrect");
 
@@ -281,15 +289,15 @@ class UserServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw UserNotFoundException when principal is null")
-        void changePassword_WithNullPrincipal_ThrowsUserNotFoundException() {
+        @DisplayName("Should throw UserNotFoundException when user does not exist")
+        void changePassword_WithNonExistentUser_ThrowsUserNotFoundException() {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(auth.getPrincipal()).thenReturn(null);
+            UUID unknownId = UUID.randomUUID();
+            when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
             ChangePasswordRequest request = new ChangePasswordRequest("current", "newpassword123");
 
             // When/Then
-            assertThatThrownBy(() -> userService.changePassword(auth, request))
+            assertThatThrownBy(() -> userService.changePassword(unknownId, request))
                     .isInstanceOf(UserNotFoundException.class)
                     .hasMessageContaining("User does not exist");
         }

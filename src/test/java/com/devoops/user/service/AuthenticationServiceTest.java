@@ -19,9 +19,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
@@ -44,9 +41,6 @@ class AuthenticationServiceTest {
 
     @Mock
     private JwtService jwtService;
-
-    @Mock
-    private AuthenticationManager authenticationManager;
 
     @Mock
     private UserMapper userMapper;
@@ -172,8 +166,7 @@ class AuthenticationServiceTest {
             // Given
             when(userRepository.findByUsernameOrEmail("testuser", "testuser"))
                     .thenReturn(Optional.of(user));
-            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                    .thenReturn(new UsernamePasswordAuthenticationToken(user, null));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
             when(jwtService.generateToken(any(User.class))).thenReturn("jwt-token");
             when(jwtService.getExpirationTime()).thenReturn(86400000L);
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
@@ -186,7 +179,7 @@ class AuthenticationServiceTest {
             assertThat(response.accessToken()).isEqualTo("jwt-token");
             assertThat(response.user().username()).isEqualTo("testuser");
 
-            verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+            verify(passwordEncoder).matches("password123", "encodedPassword");
         }
 
         @Test
@@ -196,8 +189,7 @@ class AuthenticationServiceTest {
             LoginRequest emailLoginRequest = new LoginRequest("test@example.com", "password123");
             when(userRepository.findByUsernameOrEmail("test@example.com", "test@example.com"))
                     .thenReturn(Optional.of(user));
-            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                    .thenReturn(new UsernamePasswordAuthenticationToken(user, null));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
             when(jwtService.generateToken(any(User.class))).thenReturn("jwt-token");
             when(jwtService.getExpirationTime()).thenReturn(86400000L);
             when(userMapper.toUserResponse(any(User.class))).thenReturn(userResponse);
@@ -222,7 +214,7 @@ class AuthenticationServiceTest {
                     .isInstanceOf(InvalidCredentialsException.class)
                     .hasMessageContaining("Invalid username/email or password");
 
-            verify(authenticationManager, never()).authenticate(any());
+            verify(passwordEncoder, never()).matches(anyString(), anyString());
         }
 
         @Test
@@ -231,8 +223,7 @@ class AuthenticationServiceTest {
             // Given
             when(userRepository.findByUsernameOrEmail("testuser", "testuser"))
                     .thenReturn(Optional.of(user));
-            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                    .thenThrow(new BadCredentialsException("Bad credentials"));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(false);
 
             // When/Then
             assertThatThrownBy(() -> authenticationService.login(loginRequest))

@@ -11,9 +11,6 @@ import com.devoops.user.repository.UserRepository;
 import com.devoops.user.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +23,6 @@ public class AuthenticationService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final AuthenticationManager authenticationManager;
     private final UserMapper userMapper;
     private final UserEventPublisherService userEventPublisherService;
 
@@ -67,11 +63,7 @@ public class AuthenticationService {
                 return new InvalidCredentialsException("Invalid username/email or password");
             });
 
-        try {
-            authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(user.getUsername(), request.password())
-            );
-        } catch (BadCredentialsException e) {
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             log.warn("Login failed - invalid password for user: {}", user.getUsername());
             throw new InvalidCredentialsException("Invalid username/email or password");
         }

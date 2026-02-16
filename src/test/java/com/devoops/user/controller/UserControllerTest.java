@@ -1,5 +1,7 @@
 package com.devoops.user.controller;
 
+import com.devoops.user.config.RoleAuthorizationInterceptor;
+import com.devoops.user.config.UserContextResolver;
 import com.devoops.user.dto.request.ChangePasswordRequest;
 import com.devoops.user.dto.request.UpdateUserRequest;
 import com.devoops.user.dto.response.AuthenticationResponse;
@@ -19,15 +21,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
-import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -45,6 +46,7 @@ class UserControllerTest {
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
+    private UUID userId;
     private UserResponse userResponse;
     private AuthenticationResponse authenticationResponse;
 
@@ -52,11 +54,15 @@ class UserControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(userController)
                 .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(new UserContextResolver())
+                .addInterceptors(new RoleAuthorizationInterceptor())
                 .build();
         objectMapper = new ObjectMapper();
 
+        userId = UUID.randomUUID();
+
         userResponse = new UserResponse(
-                UUID.randomUUID(),
+                userId,
                 "testuser",
                 "test@example.com",
                 "Test",
@@ -77,15 +83,15 @@ class UserControllerTest {
     class GetProfileTests {
 
         @Test
-        @DisplayName("Should return 200 OK with UserResponse when auth is valid")
-        void getProfile_WithValidAuth_ReturnsUserResponse() throws Exception {
+        @DisplayName("Should return 200 OK with UserResponse when auth headers are valid")
+        void getProfile_WithValidHeaders_ReturnsUserResponse() throws Exception {
             // Given
-            Authentication auth = mock(Authentication.class);
-            when(userService.getProfile(any(Authentication.class))).thenReturn(userResponse);
+            when(userService.getProfile(eq(userId))).thenReturn(userResponse);
 
             // When/Then
             mockMvc.perform(get("/api/user/me")
-                            .principal(auth))
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST"))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.username").value("testuser"))
@@ -94,18 +100,21 @@ class UserControllerTest {
         }
 
         @Test
-        @DisplayName("Should return 401 when service throws InvalidCredentialsException")
-        void getProfile_WithoutAuth_Returns401() throws Exception {
-            // Given
-            Authentication auth = mock(Authentication.class);
-            when(userService.getProfile(any(Authentication.class)))
-                    .thenThrow(new InvalidCredentialsException("Unauthorized"));
+        @DisplayName("Should return 401 when auth headers are missing")
+        void getProfile_WithoutHeaders_Returns401() throws Exception {
+            // When/Then
+            mockMvc.perform(get("/api/user/me"))
+                    .andExpect(status().isUnauthorized());
+        }
 
+        @Test
+        @DisplayName("Should return 403 when role is not allowed")
+        void getProfile_WithWrongRole_Returns403() throws Exception {
             // When/Then
             mockMvc.perform(get("/api/user/me")
-                            .principal(auth))
-                    .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.title").value("Invalid Credentials"));
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "ADMIN"))
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -120,13 +129,13 @@ class UserControllerTest {
             UpdateUserRequest request = new UpdateUserRequest(
                     "newusername", "new@example.com", "New", "Name", "New City"
             );
-            Authentication auth = mock(Authentication.class);
-            when(userService.updateProfile(any(Authentication.class), any(UpdateUserRequest.class)))
+            when(userService.updateProfile(eq(userId), any(UpdateUserRequest.class)))
                     .thenReturn(authenticationResponse);
 
             // When/Then
             mockMvc.perform(put("/api/user/me")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
@@ -143,13 +152,13 @@ class UserControllerTest {
             UpdateUserRequest request = new UpdateUserRequest(
                     "takenuser", null, null, null, null
             );
-            Authentication auth = mock(Authentication.class);
-            when(userService.updateProfile(any(Authentication.class), any(UpdateUserRequest.class)))
+            when(userService.updateProfile(eq(userId), any(UpdateUserRequest.class)))
                     .thenThrow(new UserAlreadyExistsException("Username already taken"));
 
             // When/Then
             mockMvc.perform(put("/api/user/me")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isConflict())
@@ -164,13 +173,13 @@ class UserControllerTest {
             UpdateUserRequest request = new UpdateUserRequest(
                     null, "taken@example.com", null, null, null
             );
-            Authentication auth = mock(Authentication.class);
-            when(userService.updateProfile(any(Authentication.class), any(UpdateUserRequest.class)))
+            when(userService.updateProfile(eq(userId), any(UpdateUserRequest.class)))
                     .thenThrow(new UserAlreadyExistsException("Email already taken"));
 
             // When/Then
             mockMvc.perform(put("/api/user/me")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isConflict())
@@ -186,11 +195,11 @@ class UserControllerTest {
                         "email": "not-an-email"
                     }
                     """;
-            Authentication auth = mock(Authentication.class);
 
             // When/Then
             mockMvc.perform(put("/api/user/me")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(invalidRequest))
                     .andExpect(status().isBadRequest());
@@ -205,11 +214,11 @@ class UserControllerTest {
                         "username": "ab"
                     }
                     """;
-            Authentication auth = mock(Authentication.class);
 
             // When/Then
             mockMvc.perform(put("/api/user/me")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(invalidRequest))
                     .andExpect(status().isBadRequest());
@@ -225,11 +234,11 @@ class UserControllerTest {
         void changePassword_WithValidRequest_Returns204() throws Exception {
             // Given
             ChangePasswordRequest request = new ChangePasswordRequest("currentPass1", "newPassword123");
-            Authentication auth = mock(Authentication.class);
 
             // When/Then
             mockMvc.perform(put("/api/user/me/password")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNoContent());
@@ -240,13 +249,13 @@ class UserControllerTest {
         void changePassword_WithInvalidCurrentPassword_Returns401() throws Exception {
             // Given
             ChangePasswordRequest request = new ChangePasswordRequest("wrongPass", "newPassword123");
-            Authentication auth = mock(Authentication.class);
             doThrow(new InvalidCredentialsException("Current password is incorrect"))
-                    .when(userService).changePassword(any(Authentication.class), any(ChangePasswordRequest.class));
+                    .when(userService).changePassword(eq(userId), any(ChangePasswordRequest.class));
 
             // When/Then
             mockMvc.perform(put("/api/user/me/password")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnauthorized())
@@ -263,11 +272,11 @@ class UserControllerTest {
                         "newPassword": "newPassword123"
                     }
                     """;
-            Authentication auth = mock(Authentication.class);
 
             // When/Then
             mockMvc.perform(put("/api/user/me/password")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(invalidRequest))
                     .andExpect(status().isBadRequest());
@@ -283,11 +292,11 @@ class UserControllerTest {
                         "newPassword": "short"
                     }
                     """;
-            Authentication auth = mock(Authentication.class);
 
             // When/Then
             mockMvc.perform(put("/api/user/me/password")
-                            .principal(auth)
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(invalidRequest))
                     .andExpect(status().isBadRequest());

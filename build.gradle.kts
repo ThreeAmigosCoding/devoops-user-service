@@ -34,8 +34,8 @@ dependencies {
 	implementation("org.flywaydb:flyway-database-postgresql")
 	runtimeOnly("org.postgresql:postgresql")
 
-	// Security
-	implementation("org.springframework.boot:spring-boot-starter-security")
+	// Password Encoding
+	implementation("org.springframework.security:spring-security-crypto")
 
 	// RabbitMQ
 	implementation("org.springframework.boot:spring-boot-starter-amqp")
@@ -66,7 +66,6 @@ dependencies {
 
 	// Test
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
-	testImplementation("org.springframework.security:spring-security-test")
 	testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 	testImplementation("org.testcontainers:postgresql:1.20.4")
 	testImplementation("org.springframework.amqp:spring-rabbit-test")
