@@ -28,6 +28,7 @@ public class AuthenticationService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final UserMapper userMapper;
+    private final UserEventPublisherService userEventPublisherService;
 
     @Transactional
     public AuthenticationResponse register(RegisterRequest request) {
@@ -51,6 +52,8 @@ public class AuthenticationService {
 
         log.info("Registration successful for user: {} (id: {}, role: {})",
                 savedUser.getUsername(), savedUser.getId(), savedUser.getRole());
+
+        userEventPublisherService.publishUserCreated(savedUser.getId(), savedUser.getEmail());
 
         return new AuthenticationResponse(token, jwtService.getExpirationTime(), userMapper.toUserResponse(savedUser));
     }
