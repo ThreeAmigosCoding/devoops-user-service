@@ -7,6 +7,7 @@ import com.devoops.user.dto.request.UpdateUserRequest;
 import com.devoops.user.dto.response.AuthenticationResponse;
 import com.devoops.user.dto.response.UserResponse;
 import com.devoops.user.entity.Role;
+import com.devoops.user.exception.AccountDeletionException;
 import com.devoops.user.exception.GlobalExceptionHandler;
 import com.devoops.user.exception.InvalidCredentialsException;
 import com.devoops.user.exception.UserAlreadyExistsException;
@@ -28,10 +29,8 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -300,6 +299,76 @@ class UserControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(invalidRequest))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/user/me — deleteAccount")
+    class DeleteAccountTests {
+
+        @Test
+        @DisplayName("Should return 204 NO CONTENT when account deletion is successful")
+        void deleteAccount_WithValidRequest_Returns204() throws Exception {
+            // Given
+            doNothing().when(userService).deleteAccount(eq(userId));
+
+            // When/Then
+            mockMvc.perform(delete("/api/user/me")
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isNoContent());
+
+            verify(userService).deleteAccount(userId);
+        }
+
+        @Test
+        @DisplayName("Should return 409 CONFLICT when guest has active reservations")
+        void deleteAccount_WithActiveReservations_Returns409() throws Exception {
+            // Given
+            doThrow(new AccountDeletionException("Cannot delete account: you have 2 active reservation(s)", 2))
+                    .when(userService).deleteAccount(eq(userId));
+
+            // When/Then
+            mockMvc.perform(delete("/api/user/me")
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.title").value("Account Deletion Failed"))
+                    .andExpect(jsonPath("$.detail").value("Cannot delete account: you have 2 active reservation(s)"))
+                    .andExpect(jsonPath("$.activeReservationCount").value(2));
+        }
+
+        @Test
+        @DisplayName("Should return 401 when auth headers are missing")
+        void deleteAccount_WithoutHeaders_Returns401() throws Exception {
+            // When/Then
+            mockMvc.perform(delete("/api/user/me"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Should return 403 when role is not allowed")
+        void deleteAccount_WithWrongRole_Returns403() throws Exception {
+            // When/Then
+            mockMvc.perform(delete("/api/user/me")
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "ADMIN"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("Should work for HOST role")
+        void deleteAccount_WithHostRole_Returns204() throws Exception {
+            // Given
+            doNothing().when(userService).deleteAccount(eq(userId));
+
+            // When/Then
+            mockMvc.perform(delete("/api/user/me")
+                            .header("X-User-Id", userId.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isNoContent());
+
+            verify(userService).deleteAccount(userId);
         }
     }
 }

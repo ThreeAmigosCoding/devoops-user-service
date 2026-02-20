@@ -6,9 +6,14 @@ import com.devoops.user.dto.response.AuthenticationResponse;
 import com.devoops.user.dto.response.UserResponse;
 import com.devoops.user.entity.Role;
 import com.devoops.user.entity.User;
+import com.devoops.user.exception.AccountDeletionException;
 import com.devoops.user.exception.InvalidPasswordException;
 import com.devoops.user.exception.UserAlreadyExistsException;
 import com.devoops.user.exception.UserNotFoundException;
+import com.devoops.user.grpc.AccommodationGrpcClient;
+import com.devoops.user.grpc.CascadeDeleteResult;
+import com.devoops.user.grpc.DeletionCheckResult;
+import com.devoops.user.grpc.ReservationGrpcClient;
 import com.devoops.user.mapper.UserMapper;
 import com.devoops.user.repository.UserRepository;
 import com.devoops.user.security.JwtService;
@@ -46,6 +51,12 @@ class UserServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private ReservationGrpcClient reservationGrpcClient;
+
+    @Mock
+    private AccommodationGrpcClient accommodationGrpcClient;
+
     @InjectMocks
     private UserService userService;
 
@@ -79,6 +90,19 @@ class UserServiceTest {
                 .lastName("User")
                 .residence("Test City")
                 .role(Role.GUEST)
+                .build();
+    }
+
+    private User buildTestHost() {
+        return User.builder()
+                .id(testUserId)
+                .username("testhost")
+                .password("encoded_password")
+                .email("host@example.com")
+                .firstName("Test")
+                .lastName("Host")
+                .residence("Test City")
+                .role(Role.HOST)
                 .build();
     }
 
@@ -300,6 +324,159 @@ class UserServiceTest {
             assertThatThrownBy(() -> userService.changePassword(unknownId, request))
                     .isInstanceOf(UserNotFoundException.class)
                     .hasMessageContaining("User does not exist");
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteAccount Tests")
+    class DeleteAccountTests {
+
+        @Test
+        @DisplayName("Should delete guest account when no active reservations exist")
+        void deleteAccount_GuestWithNoReservations_DeletesSuccessfully() {
+            // Given
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(reservationGrpcClient.checkGuestCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(true, "", 0));
+
+            // When
+            userService.deleteAccount(testUserId);
+
+            // Then
+            assertThat(testUser.isDeleted()).isTrue();
+            verify(userRepository).save(testUser);
+            verify(reservationGrpcClient).checkGuestCanBeDeleted(testUserId);
+            verify(accommodationGrpcClient, never()).deleteAccommodationsByHost(any());
+        }
+
+        @Test
+        @DisplayName("Should throw AccountDeletionException when guest has active reservations")
+        void deleteAccount_GuestWithActiveReservations_ThrowsAccountDeletionException() {
+            // Given
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(reservationGrpcClient.checkGuestCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(false, "Guest has 2 active reservations", 2));
+
+            // When/Then
+            assertThatThrownBy(() -> userService.deleteAccount(testUserId))
+                    .isInstanceOf(AccountDeletionException.class)
+                    .hasMessageContaining("2 active reservation(s)");
+
+            assertThat(testUser.isDeleted()).isFalse();
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Should delete host account and cascade delete accommodations when no active reservations")
+        void deleteAccount_HostWithNoReservations_DeletesWithCascade() {
+            // Given
+            User hostUser = buildTestHost();
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(hostUser));
+            when(reservationGrpcClient.checkHostCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(true, "", 0));
+            when(accommodationGrpcClient.deleteAccommodationsByHost(testUserId))
+                    .thenReturn(new CascadeDeleteResult(true, 3, ""));
+
+            // When
+            userService.deleteAccount(testUserId);
+
+            // Then
+            assertThat(hostUser.isDeleted()).isTrue();
+            verify(userRepository).save(hostUser);
+            verify(reservationGrpcClient).checkHostCanBeDeleted(testUserId);
+            verify(accommodationGrpcClient).deleteAccommodationsByHost(testUserId);
+        }
+
+        @Test
+        @DisplayName("Should throw AccountDeletionException when host has active reservations on accommodations")
+        void deleteAccount_HostWithActiveReservations_ThrowsAccountDeletionException() {
+            // Given
+            User hostUser = buildTestHost();
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(hostUser));
+            when(reservationGrpcClient.checkHostCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(false, "Host has 5 active reservations", 5));
+
+            // When/Then
+            assertThatThrownBy(() -> userService.deleteAccount(testUserId))
+                    .isInstanceOf(AccountDeletionException.class)
+                    .hasMessageContaining("5 active reservation(s)")
+                    .hasMessageContaining("your accommodations");
+
+            assertThat(hostUser.isDeleted()).isFalse();
+            verify(userRepository, never()).save(any());
+            verify(accommodationGrpcClient, never()).deleteAccommodationsByHost(any());
+        }
+
+        @Test
+        @DisplayName("Should throw RuntimeException when cascade delete fails")
+        void deleteAccount_HostCascadeDeleteFails_ThrowsRuntimeException() {
+            // Given
+            User hostUser = buildTestHost();
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(hostUser));
+            when(reservationGrpcClient.checkHostCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(true, "", 0));
+            when(accommodationGrpcClient.deleteAccommodationsByHost(testUserId))
+                    .thenReturn(new CascadeDeleteResult(false, 0, "Database error"));
+
+            // When/Then
+            assertThatThrownBy(() -> userService.deleteAccount(testUserId))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Failed to delete accommodations")
+                    .hasMessageContaining("Database error");
+
+            assertThat(hostUser.isDeleted()).isFalse();
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Should throw UserNotFoundException when user does not exist")
+        void deleteAccount_WithNonExistentUser_ThrowsUserNotFoundException() {
+            // Given
+            UUID unknownId = UUID.randomUUID();
+            when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+            // When/Then
+            assertThatThrownBy(() -> userService.deleteAccount(unknownId))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessageContaining("User does not exist");
+
+            verify(reservationGrpcClient, never()).checkGuestCanBeDeleted(any());
+            verify(reservationGrpcClient, never()).checkHostCanBeDeleted(any());
+        }
+
+        @Test
+        @DisplayName("Should not call host deletion check for guest user")
+        void deleteAccount_GuestUser_OnlyCallsGuestCheck() {
+            // Given
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(testUser));
+            when(reservationGrpcClient.checkGuestCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(true, "", 0));
+
+            // When
+            userService.deleteAccount(testUserId);
+
+            // Then
+            verify(reservationGrpcClient).checkGuestCanBeDeleted(testUserId);
+            verify(reservationGrpcClient, never()).checkHostCanBeDeleted(any());
+        }
+
+        @Test
+        @DisplayName("Should not call guest deletion check for host user")
+        void deleteAccount_HostUser_OnlyCallsHostCheck() {
+            // Given
+            User hostUser = buildTestHost();
+            when(userRepository.findById(testUserId)).thenReturn(Optional.of(hostUser));
+            when(reservationGrpcClient.checkHostCanBeDeleted(testUserId))
+                    .thenReturn(new DeletionCheckResult(true, "", 0));
+            when(accommodationGrpcClient.deleteAccommodationsByHost(testUserId))
+                    .thenReturn(new CascadeDeleteResult(true, 0, ""));
+
+            // When
+            userService.deleteAccount(testUserId);
+
+            // Then
+            verify(reservationGrpcClient).checkHostCanBeDeleted(testUserId);
+            verify(reservationGrpcClient, never()).checkGuestCanBeDeleted(any());
         }
     }
 }
