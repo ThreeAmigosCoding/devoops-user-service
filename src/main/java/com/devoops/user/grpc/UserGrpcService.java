@@ -42,15 +42,27 @@ public class UserGrpcService extends UserInternalServiceGrpc.UserInternalService
             return buildNotFoundResponse();
         }
 
+        // First try to find active (non-deleted) user
         Optional<User> userOpt = userRepository.findById(userId);
-        if (userOpt.isEmpty()) {
-            log.debug("User not found: {}", userId);
-            return buildNotFoundResponse();
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            log.debug("Found active user: {} {} ({})", user.getFirstName(), user.getLastName(), user.getRole());
+            return buildUserResponse(user, false);
         }
 
-        User user = userOpt.get();
-        log.debug("Found user: {} {} ({})", user.getFirstName(), user.getLastName(), user.getRole());
+        // If not found, check if user exists but is deleted
+        Optional<User> deletedUserOpt = userRepository.findByIdIncludingDeleted(userId);
+        if (deletedUserOpt.isPresent()) {
+            User user = deletedUserOpt.get();
+            log.debug("Found deleted user: {} {} ({})", user.getFirstName(), user.getLastName(), user.getRole());
+            return buildUserResponse(user, true);
+        }
 
+        log.debug("User not found: {}", userId);
+        return buildNotFoundResponse();
+    }
+
+    private GetUserSummaryResponse buildUserResponse(User user, boolean isDeleted) {
         return GetUserSummaryResponse.newBuilder()
                 .setFound(true)
                 .setUserId(user.getId().toString())
@@ -58,6 +70,7 @@ public class UserGrpcService extends UserInternalServiceGrpc.UserInternalService
                 .setFirstName(user.getFirstName())
                 .setLastName(user.getLastName())
                 .setRole(user.getRole().name())
+                .setIsDeleted(isDeleted)
                 .build();
     }
 

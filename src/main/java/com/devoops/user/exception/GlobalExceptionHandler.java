@@ -95,4 +95,13 @@ public class GlobalExceptionHandler {
         problemDetail.setProperty("errors", errors);
         return problemDetail;
     }
+
+    @ExceptionHandler(AccountDeletionException.class)
+    public ProblemDetail handleAccountDeletion(AccountDeletionException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problemDetail.setTitle("Account Deletion Failed");
+        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("activeReservationCount", ex.getActiveReservationCount());
+        return problemDetail;
+    }
 }
