@@ -85,6 +85,7 @@ class UserGrpcServiceTest {
             assertThat(response.getFirstName()).isEqualTo("Test");
             assertThat(response.getLastName()).isEqualTo("User");
             assertThat(response.getRole()).isEqualTo("GUEST");
+            assertThat(response.getIsDeleted()).isFalse();
         }
 
         @Test
@@ -96,6 +97,7 @@ class UserGrpcServiceTest {
                     .setUserId(unknownId.toString())
                     .build();
             when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
+            when(userRepository.findByIdIncludingDeleted(unknownId)).thenReturn(Optional.empty());
 
             // When
             userGrpcService.getUserSummary(request, responseObserver);
@@ -110,6 +112,36 @@ class UserGrpcServiceTest {
             assertThat(response.getFound()).isFalse();
             assertThat(response.getUserId()).isEmpty();
             assertThat(response.getEmail()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Should return deleted user with isDeleted flag when user is soft-deleted")
+        void getUserSummary_WithDeletedUser_ReturnsUserWithDeletedFlag() {
+            // Given
+            GetUserSummaryRequest request = GetUserSummaryRequest.newBuilder()
+                    .setUserId(testUserId.toString())
+                    .build();
+            testUser.setDeleted(true);
+            when(userRepository.findById(testUserId)).thenReturn(Optional.empty());
+            when(userRepository.findByIdIncludingDeleted(testUserId)).thenReturn(Optional.of(testUser));
+
+            // When
+            userGrpcService.getUserSummary(request, responseObserver);
+
+            // Then
+            ArgumentCaptor<GetUserSummaryResponse> captor = ArgumentCaptor.forClass(GetUserSummaryResponse.class);
+            verify(responseObserver).onNext(captor.capture());
+            verify(responseObserver).onCompleted();
+            verify(responseObserver, never()).onError(any());
+
+            GetUserSummaryResponse response = captor.getValue();
+            assertThat(response.getFound()).isTrue();
+            assertThat(response.getUserId()).isEqualTo(testUserId.toString());
+            assertThat(response.getEmail()).isEqualTo("test@example.com");
+            assertThat(response.getFirstName()).isEqualTo("Test");
+            assertThat(response.getLastName()).isEqualTo("User");
+            assertThat(response.getRole()).isEqualTo("GUEST");
+            assertThat(response.getIsDeleted()).isTrue();
         }
 
         @Test

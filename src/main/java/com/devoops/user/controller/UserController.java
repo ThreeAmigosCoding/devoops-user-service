@@ -41,4 +41,11 @@ public class UserController {
         userService.changePassword(userContext.userId(), request);
         return ResponseEntity.noContent().build();
     }
+
+    @DeleteMapping
+    @RequireRole({"HOST", "GUEST"})
+    public ResponseEntity<Void> deleteAccount(UserContext userContext) {
+        userService.deleteAccount(userContext.userId());
+        return ResponseEntity.noContent().build();
+    }
 }

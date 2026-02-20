@@ -67,6 +67,9 @@ dependencies {
 	implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
 	compileOnly("javax.annotation:javax.annotation-api:1.3.2")
 
+	// gRPC Client
+	implementation("net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE")
+
 	// Tracing (Zipkin)
 	implementation("org.springframework.boot:spring-boot-micrometer-tracing-brave")
 	implementation("org.springframework.boot:spring-boot-starter-zipkin")
