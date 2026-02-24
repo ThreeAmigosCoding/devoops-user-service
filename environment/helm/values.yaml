@@ -1,0 +1,58 @@
+fullnameOverride: devoops-user-service
+replicaCount: 1
+
+image:
+  registry: docker.io
+  repository: threeamigoscoding/devoops-user-service
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpc:
+    enabled: true
+    port: 9090
+
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 250m
+  limits:
+    memory: 512Mi
+    cpu: 1000m
+
+health:
+  path: /actuator/health
+  periodSeconds: 10
+  failureThreshold: 3
+  startup:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 60
+
+configData:
+  JAVA_TOOL_OPTIONS: "-XX:+UseSerialGC -Xms128m -Xmx384m -XX:ActiveProcessorCount=1"
+  SERVER_PORT: "8080"
+  LOGSTASH_HOST: "devoops-logstash:5000"
+  ZIPKIN_HOST: "devoops-jaeger"
+  ZIPKIN_PORT: "9411"
+  POSTGRES_HOST: "devoops-postgres"
+  POSGTES_PORT: "5432"
+  RABBITMQ_HOST: "devoops-rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "/"
+  RESERVATION_SERVICE_GRPC_HOST: "devoops-reservation-service"
+  RESERVATION_SERVICE_GRPC_PORT: "9090"
+  ACCOMMODATION_SERVICE_GRPC_HOST: "devoops-accommodation-service"
+  ACCOMMODATION_SERVICE_GRPC_PORT: "9090"
+
+secretData:
+  DB_USERNAME: "user-service"
+  DB_PASSWORD: "user-service-pass"
+  RABBITMQ_USERNAME: "devoops"
+  RABBITMQ_PASSWORD: "devoops123"
+  JWT_SECRET: "dGhpcyBpcyBhIHZlcnkgc2VjdXJlIGtleSBmb3IgSFMyNTYgdGhhdCBpcyBhdCBsZWFzdCAyNTYgYml0cyBsb25n"
